@@ -1,0 +1,145 @@
+import streamlit as st
+import pandas as pd
+import matplotlib.pyplot as plt
+
+from pandas_datareader import data as pdr
+from statsmodels.tsa.arima.model import ARIMA
+
+st.set_page_config(
+    page_title="Inflation Rate Forecast using ARIMA",
+    layout="wide"
+)
+
+st.title("📊 Inflation Rate Forecast using ARIMA")
+
+st.write(
+    "Downloads historical inflation data and forecasts the inflation rate for June 2027."
+)
+
+if st.button("Generate Forecast"):
+
+    try:
+
+        with st.spinner("Downloading inflation data..."):
+
+            # CPI Inflation Rate (% YoY)
+            inflation = pdr.DataReader(
+                "FPCPITOTLZGUSA",
+                "fred",
+                start="2000-01-01"
+            )
+
+        inflation = inflation.dropna()
+
+        if inflation.empty:
+            st.error("No inflation data found.")
+            st.stop()
+
+        inflation_series = inflation.iloc[:, 0]
+
+        st.success(
+            f"Downloaded {len(inflation_series)} observations."
+        )
+
+        st.subheader("Historical Inflation Rate")
+
+        fig, ax = plt.subplots(figsize=(12, 5))
+
+        ax.plot(
+            inflation_series.index,
+            inflation_series.values
+        )
+
+        ax.set_title("U.S. Inflation Rate (%)")
+        ax.set_xlabel("Year")
+        ax.set_ylabel("Inflation (%)")
+
+        st.pyplot(fig)
+
+        st.subheader("Recent Data")
+        st.dataframe(inflation.tail(10))
+
+        st.subheader("Training ARIMA Model")
+
+        with st.spinner("Fitting ARIMA..."):
+
+            model = ARIMA(
+                inflation_series,
+                order=(2, 1, 2)
+            )
+
+            model_fit = model.fit()
+
+        target_date = pd.Timestamp("2027-06-30")
+
+        future_periods = (
+            target_date.year -
+            inflation_series.index[-1].year
+        )
+
+        if future_periods <= 0:
+            future_periods = 1
+
+        forecast = model_fit.forecast(
+            steps=future_periods
+        )
+
+        forecast_index = pd.date_range(
+            start=inflation_series.index[-1] +
+            pd.DateOffset(years=1),
+            periods=future_periods,
+            freq="Y"
+        )
+
+        forecast_df = pd.DataFrame(
+            {
+                "Forecast Inflation (%)": forecast.values
+            },
+            index=forecast_index
+        )
+
+        june_2027_rate = float(
+            forecast_df.iloc[-1, 0]
+        )
+
+        st.subheader("Forecast Result")
+
+        st.metric(
+            "Estimated Inflation Rate in 2027",
+            f"{june_2027_rate:.2f}%"
+        )
+
+        st.subheader("Forecast Chart")
+
+        fig2, ax2 = plt.subplots(figsize=(12, 5))
+
+        ax2.plot(
+            inflation_series.index,
+            inflation_series.values,
+            label="Historical"
+        )
+
+        ax2.plot(
+            forecast_df.index,
+            forecast_df.iloc[:, 0],
+            label="Forecast"
+        )
+
+        ax2.set_title(
+            "Historical Inflation + ARIMA Forecast"
+        )
+
+        ax2.set_xlabel("Year")
+        ax2.set_ylabel("Inflation (%)")
+        ax2.legend()
+
+        st.pyplot(fig2)
+
+        st.subheader("Forecast Data")
+
+        st.dataframe(forecast_df)
+
+    except Exception as e:
+
+        st.error("Error encountered:")
+        st.exception(e)
